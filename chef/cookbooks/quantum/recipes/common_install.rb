@@ -19,7 +19,8 @@ if quantums.length > 0
 else
   quantum = node
 end
-quantum_agent="quantum-plugin-openvswitch-agent"
+
+quantum_agent=node[:quantum][:platform][:ovs_agent_name]
 
 quantum_path = "/opt/quantum"
 venv_path = quantum[:quantum][:use_virtualenv] ? "#{quantum_path}/.venv" : nil
@@ -75,7 +76,7 @@ else
     cookbook "quantum"
     source "quantum-rootwrap.conf"
     mode 00644
-    owner "quantum"
+    owner node[:quantum][:platform][:user]
   end
 end
 
@@ -100,14 +101,10 @@ template "/etc/sudoers.d/quantum-rootwrap" do
             :binary => node[:quantum][:rootwrap])
 end
 
-ovs_pkgs = [ "linux-headers-#{`uname -r`.strip}",
-             "openvswitch-switch",
-             "openvswitch-datapath-dkms"
-           ]
-ovs_pkgs.each { |p| package p }
+node[:quantum][:platform][:ovs_pkgs].each { |p| package p }
 
 bash "Load openvswitch module" do
-  code "modprobe openvswitch"
+  code node[:quantum][:platform][:ovs_modprobe]
   not_if do ::File.directory?("/sys/module/openvswitch") end
 end
 
@@ -215,11 +212,6 @@ admin_password = keystone["keystone"]["admin"]["password"] rescue nil
 default_tenant = keystone["keystone"]["default"]["tenant"] rescue nil
 Chef::Log.info("Keystone server found at #{keystone_address}")
 
-service quantum_agent do
-  supports :status => true, :restart => true
-  action :enable
-end
-
 vlan_start = node[:network][:networks][:nova_fixed][:vlan]
 vlan_end = vlan_start + 2000
 
@@ -233,7 +225,7 @@ template "/etc/quantum/quantum.conf" do
     cookbook "quantum"
     source "quantum.conf.erb"
     mode "0644"
-    owner "quantum"
+    owner node[:quantum][:platform][:user]
     variables(
       :sql_connection => quantum[:quantum][:db][:sql_connection],
       :sql_idle_timeout => quantum[:quantum][:sql][:idle_timeout],
@@ -266,4 +258,3 @@ template "/etc/quantum/quantum.conf" do
     )
     notifies :restart, resources(:service => quantum_agent), :immediately
 end
-
