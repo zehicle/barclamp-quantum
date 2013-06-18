@@ -80,25 +80,31 @@ else
   end
 end
 
+node[:quantum] ||= Mash.new
+node[:quantum][:rootwrap] = "/usr/bin/quantum-rootwrap"
+
+# Update path to quantum-rootwrap in case the path above is wrong
 ruby_block "Find quantum rootwrap" do
   block do
+    found = false
     ENV['PATH'].split(':').each do |p|
       f = File.join(p,"quantum-rootwrap")
       next unless File.executable?(f)
-      node[:quantum] ||= Mash.new
       node[:quantum][:rootwrap] = f
+      found = true
       break
     end
-    raise("Could not find quantum rootwrap binary!") unless node[:quantum][:rootwrap]
+    raise("Could not find quantum rootwrap binary!") unless found
   end
-end unless node[:quantum][:rootwrap] && !node[:quantum][:rootwrap].empty?
+end
 
 template "/etc/sudoers.d/quantum-rootwrap" do
   cookbook "quantum"
   source "quantum-rootwrap.erb"
   mode 0440
-  variables(:user => "quantum",
+  variables(:user => node[:quantum][:platform][:user],
             :binary => node[:quantum][:rootwrap])
+  not_if { node[:platform] == "suse" }
 end
 
 node[:quantum][:platform][:ovs_pkgs].each { |p| package p }
@@ -201,7 +207,6 @@ rabbit_settings = {
 }
 
 keystone_address = Chef::Recipe::Barclamp::Inventory.get_network_by_type(keystone, "admin").address if keystone_address.nil?
-keystone_token = keystone["keystone"]["service"]["token"]
 keystone_service_port = keystone["keystone"]["api"]["service_port"]
 keystone_admin_port = keystone["keystone"]["api"]["admin_port"]
 keystone_service_tenant = keystone["keystone"]["service"]["tenant"]
@@ -209,7 +214,6 @@ keystone_service_user = quantum["quantum"]["service_user"]
 keystone_service_password = quantum["quantum"]["service_password"]
 admin_username = keystone["keystone"]["admin"]["username"] rescue nil
 admin_password = keystone["keystone"]["admin"]["password"] rescue nil
-default_tenant = keystone["keystone"]["default"]["tenant"] rescue nil
 Chef::Log.info("Keystone server found at #{keystone_address}")
 
 vlan_start = node[:network][:networks][:nova_fixed][:vlan]
@@ -224,7 +228,7 @@ end
 template "/etc/quantum/quantum.conf" do
     cookbook "quantum"
     source "quantum.conf.erb"
-    mode "0644"
+    mode "0640"
     owner node[:quantum][:platform][:user]
     variables(
       :sql_connection => quantum[:quantum][:db][:sql_connection],
@@ -234,13 +238,11 @@ template "/etc/quantum/quantum.conf" do
       :sql_pool_timeout => quantum[:quantum][:sql][:pool_timeout],
       :debug => quantum[:quantum][:debug],
       :verbose => quantum[:quantum][:verbose],
-      :admin_token => quantum[:quantum][:service][:token],
       :service_port => quantum[:quantum][:api][:service_port], # Compute port
       :service_host => quantum[:quantum][:api][:service_host],
       :use_syslog => quantum[:quantum][:use_syslog],
       :rabbit_settings => rabbit_settings,
       :keystone_ip_address => keystone_address,
-      :keystone_admin_token => keystone_token,
       :keystone_service_port => keystone_service_port,
       :keystone_service_tenant => keystone_service_tenant,
       :keystone_service_user => keystone_service_user,

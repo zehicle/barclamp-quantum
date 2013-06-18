@@ -13,10 +13,6 @@
 # limitations under the License.
 #
 
-include_recipe "quantum::database"
-include_recipe "quantum::api_register"
-include_recipe "quantum::common_install"
-
 unless node[:quantum][:use_gitrepo]
   pkgs = node[:quantum][:platform][:pkgs]
   pkgs.each { |p| package p }
@@ -56,8 +52,12 @@ else
   end
 end
 
+include_recipe "quantum::database"
+include_recipe "quantum::api_register"
+include_recipe "quantum::common_install"
+
 # Kill all the libvirt default networks.
-bash "Destroy the libvort default network" do
+bash "Destroy the libvirt default network" do
   command "virsh net-destroy default"
   only_if "virsh net-list |grep default"
 end
@@ -77,7 +77,6 @@ else
 end
 
 keystone_address = Chef::Recipe::Barclamp::Inventory.get_network_by_type(keystone, "admin").address if keystone_address.nil?
-keystone_token = keystone["keystone"]["service"]["token"]
 keystone_service_port = keystone["keystone"]["api"]["service_port"]
 keystone_admin_port = keystone["keystone"]["api"]["admin_port"]
 keystone_service_tenant = keystone["keystone"]["service"]["tenant"]
@@ -93,7 +92,6 @@ template "/etc/quantum/api-paste.ini" do
   mode "0640"
   variables(
     :keystone_ip_address => keystone_address,
-    :keystone_admin_token => keystone_token,
     :keystone_service_port => keystone_service_port,
     :keystone_service_tenant => keystone_service_tenant,
     :keystone_service_user => keystone_service_user,
@@ -109,7 +107,7 @@ template "/etc/quantum/l3_agent.ini" do
   group "root"
   mode "0640"
   variables(
-            :debug => "True",
+            :debug => node[:quantum][:debug],
             :interface_driver => "quantum.agent.linux.interface.OVSInterfaceDriver",
             :use_namespaces => "True",
             :handle_internal_only_routers => "True",
@@ -127,7 +125,7 @@ template "/etc/quantum/dhcp_agent.ini" do
   group "root"
   mode "0640"
   variables(
-            :debug => "True",
+            :debug => node[:quantum][:debug],
             :interface_driver => "quantum.agent.linux.interface.OVSInterfaceDriver",
             :use_namespaces => "True",
             :resync_interval => 5,
@@ -155,7 +153,7 @@ template "/etc/quantum/metadata_agent.ini" do
   group "root"
   mode "0640"
   variables(
-            :debug => "True",
+            :debug => node[:quantum][:debug],
             :auth_url => keystone_service_url,
             :auth_region => "RegionOne",
             :admin_tenant_name => keystone_service_tenant,
