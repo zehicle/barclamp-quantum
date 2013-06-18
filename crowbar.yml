@@ -48,6 +48,7 @@ locale_additions:
           service_user: Keystone Service User
           service_password: Keystone Service Password
           attributes: Attributes
+          networking_plugin: Plugin
           networking_mode: Mode
 
 debs:
