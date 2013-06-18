@@ -6,7 +6,7 @@
     = render 'barclamp/git/pfsdeps.html.haml'
     %p
       %label{ :for => :database_instance }= t('.database_instance')
-      = instance_selector(@proposal.raw_data['attributes'][@proposal.barclamp]["database_engine"], :database_instance, "database_instance", @proposal)
+      = instance_selector("database", :database_instance, "database_instance", @proposal)
     %p
       %label{ :for => :keystone_instance }= t('.keystone_instance')
       = instance_selector("keystone", :keystone_instance, "keystone_instance", @proposal)
