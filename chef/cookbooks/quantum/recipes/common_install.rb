@@ -37,6 +37,13 @@ else
   keystone = quantum
 end
 
+node[:quantum][:platform][:ovs_pkgs].each { |p| package p }
+
+bash "Load openvswitch module" do
+  code node[:quantum][:platform][:ovs_modprobe]
+  not_if do ::File.directory?("/sys/module/openvswitch") end
+end
+
 unless quantum[:quantum][:use_gitrepo]
   package quantum_agent do
     action :install
@@ -105,13 +112,6 @@ template "/etc/sudoers.d/quantum-rootwrap" do
   variables(:user => node[:quantum][:platform][:user],
             :binary => node[:quantum][:rootwrap])
   not_if { node[:platform] == "suse" }
-end
-
-node[:quantum][:platform][:ovs_pkgs].each { |p| package p }
-
-bash "Load openvswitch module" do
-  code node[:quantum][:platform][:ovs_modprobe]
-  not_if do ::File.directory?("/sys/module/openvswitch") end
 end
 
 service "openvswitch-switch" do
