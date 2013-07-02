@@ -3,7 +3,6 @@
   %label{:for => "proposal_attributes"}= t('.attributes')
   = link_to "Raw", proposal_barclamp_path(:id => @proposal.name, :controller => @proposal.barclamp, :dep_raw => @dep_raw, :attr_raw => true), :style => "float: right;"
   %div.container
-    = render 'barclamp/git/pfsdeps.html.haml'
     %p
       %label{ :for => :database_instance }= t('.database_instance')
       = instance_selector("database", :database_instance, "database_instance", @proposal)
@@ -22,3 +21,4 @@
     %p
       %label{ :for => :service_password }= t('.service_password')
       %input#service_password{:type => "text", :name => "service_password", :'data-default' => @proposal.raw_data['attributes'][@proposal.barclamp]["service_password"], :onchange => "update_value('service_password','service_password', 'string')"}
+    = render 'barclamp/git/pfsdeps.html.haml'
