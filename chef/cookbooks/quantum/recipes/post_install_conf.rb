@@ -79,21 +79,21 @@ end
 
 execute "create_fixed_network" do
   command "quantum net-create fixed --shared #{fixed_network_type}"
-  not_if "quantum net-list | grep -q ' fixed '"
+  not_if "out=$(quantum net-list); [ $? != 0 ] || echo ${out} | grep -q ' fixed '"
 end
 
 execute "create_floating_network" do
   command "quantum net-create floating --router:external=True"
-  not_if "quantum net-list | grep -q ' floating '"
+  not_if "out=$(quantum net-list); [ $? != 0 ] || echo ${out} | grep -q ' floating '"
 end
 
 execute "create_fixed_subnet" do
   command "quantum subnet-create --name fixed --allocation-pool start=#{fixed_pool_start},end=#{fixed_pool_end} --gateway #{fixed_router_pool_end} fixed #{fixed_range}"
-  not_if "quantum subnet-list | grep -q ' fixed '"
+  not_if "out=$(quantum subnet-list); [ $? != 0 ] || echo ${out} | grep -q ' fixed '"
 end
 execute "create_floating_subnet" do
   command "quantum subnet-create --name floating --allocation-pool start=#{floating_pool_start},end=#{floating_pool_end} --gateway #{public_router} floating #{public_range} --enable_dhcp False"
-  not_if "quantum subnet-list | grep -q ' floating '"
+  not_if "out=$(quantum subnet-list); [ $? != 0 ] || echo ${out} | grep -q ' floating '"
 end
 
 execute "create_router" do
@@ -101,7 +101,7 @@ execute "create_router" do
 quantum router-create router-floating && \
     quantum router-gateway-set router-floating floating
 EOC
-  not_if "quantum router-list | grep -q router-floating"
+  not_if "out=$(quantum router-list); [ $? != 0 ] || echo ${out} | grep -q router-floating"
 end
 
 bash "add fixed network to router" do
