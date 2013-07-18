@@ -16,11 +16,19 @@
 unless node[:quantum][:use_gitrepo]
   pkgs = node[:quantum][:platform][:pkgs]
   pkgs.each { |p| package p }
-  file "/etc/default/quantum-server" do
-    action :delete
-    not_if { node[:platform] == "suse" }
+
+  template "/etc/default/quantum-server" do
+    source "ubuntu.default.quantum-server.erb"
+    owner "root"
+    group "root"
+    mode 0640
+    variables(
+              :plugin_config_file => "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
+              )
     notifies :restart, "service[#{node[:quantum][:platform][:service_name]}]"
+    only_if { node[:platform] == "ubuntu" }
   end
+  
   template "/etc/sysconfig/quantum" do
     source "suse.sysconfig.quantum.erb"
     owner "root"
@@ -168,8 +176,8 @@ end
 service node[:quantum][:platform][:metadata_agent_name] do
   supports :status => true, :restart => true
   action :enable
-  subscribes :restart, resources("template[/etc/quantum/quantum.conf]")
-  subscribes :restart, resources("template[/etc/quantum/metadata_agent.ini]")
+  subscribes :restart, "template[/etc/quantum/quantum.conf]", :immediately
+  subscribes :restart, "template[/etc/quantum/metadata_agent.ini]", :immediately
 end
 
 directory "/etc/quantum/plugins/openvswitch/" do
@@ -180,47 +188,35 @@ directory "/etc/quantum/plugins/openvswitch/" do
 end
 
 unless node[:quantum][:use_gitrepo]
-  link "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini" do
-    to "/etc/quantum/quantum.conf"
-  end
   service node[:quantum][:platform][:service_name] do
     supports :status => true, :restart => true
     action :enable
-    subscribes :restart, resources("template[/etc/quantum/api-paste.ini]"), :immediately
-    subscribes :restart, resources("link[/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini]"), :immediately
-    subscribes :restart, resources("template[/etc/quantum/quantum.conf]")
+    subscribes :restart, "template[/etc/quantum/api-paste.ini]", :immediately
+    subscribes :restart, "template[/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini]", :immediately
+    subscribes :restart, "template[/etc/quantum/quantum.conf]", :immediately
   end
 else
-  template "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini" do
-    source "ovs_quantum_plugin.ini.erb"
-    owner node[:quantum][:platform][:user]
-    group "root"
-    mode "0640"
-    variables(
-        :ovs_sql_connection => node[:quantum][:db][:sql_connection]
-    )
-  end
   service quantum_service_name do
     supports :status => true, :restart => true
     action :enable
-    subscribes :restart, resources("template[/etc/quantum/api-paste.ini]"), :immediately
-    subscribes :restart, resources("template[/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini]"), :immediately
-    subscribes :restart, resources("template[/etc/quantum/quantum.conf]")
+    subscribes :restart, "template[/etc/quantum/api-paste.ini]", :immediately
+    subscribes :restart, "template[/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini]", :immediately
+    subscribes :restart, "template[/etc/quantum/quantum.conf]", :immediately
   end
 end
 
 service node[:quantum][:platform][:dhcp_agent_name] do
   supports :status => true, :restart => true
   action :enable
-  subscribes :restart, resources("template[/etc/quantum/quantum.conf]")
-  subscribes :restart, resources("template[/etc/quantum/dhcp_agent.ini]")
+  subscribes :restart, "template[/etc/quantum/quantum.conf]", :immediately
+  subscribes :restart, "template[/etc/quantum/dhcp_agent.ini]", :immediately
 end
 
 service node[:quantum][:platform][:l3_agent_name] do
   supports :status => true, :restart => true
   action :enable
-  subscribes :restart, resources("template[/etc/quantum/quantum.conf]")
-  subscribes :restart, resources("template[/etc/quantum/l3_agent.ini]")
+  subscribes :restart, "template[/etc/quantum/quantum.conf]", :immediately
+  subscribes :restart, "template[/etc/quantum/l3_agent.ini]", :immediately
 end
 
 include_recipe "quantum::post_install_conf"
