@@ -69,10 +69,12 @@ ENV['OS_PASSWORD'] = admin_password
 ENV['OS_TENANT_NAME'] = admin_tenant
 ENV['OS_AUTH_URL'] = "http://#{keystone_address}:#{keystone_service_port}/v2.0/"
 
+floating_network_type = ""
 if node[:quantum][:networking_mode] == 'vlan'
   fixed_network_type = "--provider:network_type vlan --provider:segmentation_id #{fixed_net["vlan"]} --provider:physical_network physnet1"
 elsif node[:quantum][:networking_mode] == 'gre'
   fixed_network_type = "--provider:network_type gre --provider:segmentation_id 1"
+  floating_network_type = "--provider:network_type gre --provider:segmentation_id 2"
 else
   fixed_network_type = "--provider:network_type flat --provider:physical_network physnet1"
 end
@@ -83,7 +85,7 @@ execute "create_fixed_network" do
 end
 
 execute "create_floating_network" do
-  command "quantum net-create floating --router:external=True"
+  command "quantum net-create floating --router:external=True #{floating_network_type}"
   not_if "out=$(quantum net-list); [ $? != 0 ] || echo ${out} | grep -q ' floating '"
 end
 
