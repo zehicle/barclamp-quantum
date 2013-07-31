@@ -37,6 +37,20 @@ else
   keystone = quantum
 end
 
+# If we expect to install the openvswitch module via DKMS, but the module does not
+# exist, rmmod the openvswitch module before continuing.
+if node[:quantum][:platform][:ovs_pkgs].any?{|e|e == "openvswitch-datapath-dkms"} &&
+    !File.exists?("/lib/modules/#{%x{uname -r}.strip}/updates/dkms/openvswitch.ko") &&
+    File.directory?("/sys/module/openvswitch")
+  if IO.read("/sys/module/openvswitch").strip != "0"
+    Chef::Log.error("Kernel openvswitch module already loaded and in use! Please reboot me!")
+  else
+    bash "Unload non-DKMS openvswitch module" do
+      code "rmmod openvswitch"
+    end
+  end
+end
+
 node[:quantum][:platform][:ovs_pkgs].each { |p| package p }
 
 bash "Load openvswitch module" do
@@ -164,11 +178,6 @@ end
   end
 end
 
-service quantum_agent do
-  supports :status => true, :restart => true
-  action :enable
-end
-
 #env_filter = " AND nova_config_environment:nova-config-#{node[:tempest][:nova_instance]}"
 #assuming we have only one nova
 #TODO: nova should depend on quantum, but quantum depend on nova a bit, so we have to do somthing with this
@@ -219,10 +228,22 @@ Chef::Log.info("Keystone server found at #{keystone_address}")
 vlan_start = node[:network][:networks][:nova_fixed][:vlan]
 vlan_end = vlan_start + 2000
 
-link "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini" do
-  to "/etc/quantum/quantum.conf"
-  notifies :restart, resources(:service => quantum_agent), :immediately
-  notifies :restart, resources(:service => "openvswitch-switch"), :immediately
+template "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini" do
+  cookbook "quantum"
+  source "ovs_quantum_plugin.ini.erb"
+  mode "0640"
+  owner node[:quantum][:platform][:user]
+  variables(
+            :sql_connection => quantum[:quantum][:db][:ovs_sql_connection],
+            :sql_idle_timeout => quantum[:quantum][:sql][:idle_timeout],
+            :sql_min_pool_size => quantum[:quantum][:sql][:min_pool_size],
+            :sql_max_pool_size => quantum[:quantum][:sql][:max_pool_size],
+            :networking_mode => quantum[:quantum][:networking_mode],
+            :rootwrap_bin =>  node[:quantum][:rootwrap],
+            :physnet => quantum[:quantum][:networking_mode] == 'gre' ? "br-tunnel" : "br-fixed",
+            :vlan_start => vlan_start,
+            :vlan_end => vlan_end
+            )
 end
 
 template "/etc/quantum/quantum.conf" do
@@ -256,7 +277,18 @@ template "/etc/quantum/quantum.conf" do
       :vlan_start => vlan_start,
       :vlan_end => vlan_end,
       :physnet => quantum[:quantum][:networking_mode] == 'gre' ? "br-tunnel" : "br-fixed",
-      :rootwrap_bin =>  quantum[:quantum][:rootwrap]
+      :rootwrap_bin =>  node[:quantum][:rootwrap]
     )
-    notifies :restart, resources(:service => quantum_agent), :immediately
 end
+
+service quantum_agent do
+  supports :status => true, :restart => true
+  action :enable
+  subscribes :restart, "template[/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini]", :immediately
+  subscribes :restart, "template[/etc/quantum/quantum.conf]", :immediately
+end
+
+
+
+
+
