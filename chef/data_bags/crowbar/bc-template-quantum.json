@@ -31,6 +31,7 @@
       "debug": false,
       "verbose": false,
       "networking_mode": "gre",
+      "networking_plugin": "openvswitch",
       "use_syslog": false,
       "database_instance": "none",
       "db": {

@@ -70,13 +70,20 @@ ENV['OS_TENANT_NAME'] = admin_tenant
 ENV['OS_AUTH_URL'] = "http://#{keystone_address}:#{keystone_service_port}/v2.0/"
 
 floating_network_type = ""
-if node[:quantum][:networking_mode] == 'vlan'
+case node[:quantum][:networking_plugin]
+when "openvswitch"
+  floating_network_type = ""
+  if node[:quantum][:networking_mode] == 'vlan'
+    fixed_network_type = "--provider:network_type vlan --provider:segmentation_id #{fixed_net["vlan"]} --provider:physical_network physnet1"
+  elsif node[:quantum][:networking_mode] == 'gre'
+    fixed_network_type = "--provider:network_type gre --provider:segmentation_id 1"
+    floating_network_type = "--provider:network_type gre --provider:segmentation_id 2"
+  else
+    fixed_network_type = "--provider:network_type flat --provider:physical_network physnet1"
+  end
+when "linuxbridge"
   fixed_network_type = "--provider:network_type vlan --provider:segmentation_id #{fixed_net["vlan"]} --provider:physical_network physnet1"
-elsif node[:quantum][:networking_mode] == 'gre'
-  fixed_network_type = "--provider:network_type gre --provider:segmentation_id 1"
-  floating_network_type = "--provider:network_type gre --provider:segmentation_id 2"
-else
-  fixed_network_type = "--provider:network_type flat --provider:physical_network physnet1"
+  floating_network_type = "--provider:network_type vlan --provider:segmentation_id #{public_net["vlan"]} --provider:physical_network physnet1"
 end
 
 execute "create_fixed_network" do
@@ -114,4 +121,15 @@ if ! grep "$id" <(quantum router-port-list -f csv router-floating); then
     quantum router-interface-add router-floating fixed
 fi
 EOC
+end
+
+if node[:quantum][:networking_plugin] == "linuxbridge"
+  bound_if = (node[:crowbar_wall][:network][:nets][:public].last rescue nil)
+  quantum_bridge "floating bridge" do
+    network_name "floating"
+    slaves [bound_if]
+    type "linuxbridge"
+
+    action :create
+  end
 end

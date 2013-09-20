@@ -20,7 +20,12 @@ else
   quantum = node
 end
 
-quantum_agent=node[:quantum][:platform][:ovs_agent_name]
+case quantum[:quantum][:networking_plugin]
+when "openvswitch"
+  quantum_agent=node[:quantum][:platform][:ovs_agent_name]
+when "linuxbridge"
+  quantum_agent=node[:quantum][:platform][:lb_agent_name]
+end
 
 quantum_path = "/opt/quantum"
 venv_path = quantum[:quantum][:use_virtualenv] ? "#{quantum_path}/.venv" : nil
@@ -128,52 +133,63 @@ template "/etc/sudoers.d/quantum-rootwrap" do
   not_if { node[:platform] == "suse" }
 end
 
-service "openvswitch-switch" do
-  supports :status => true, :restart => true
-  action [ :enable ]
-end
+case quantum[:quantum][:networking_plugin]
+when "openvswitch"
 
-bash "Start openvswitch-switch service" do
-  code "service openvswitch-switch start"
-  only_if "service openvswitch-switch status |grep -q 'is not running'"
-end
+  node[:quantum][:platform][:ovs_pkgs].each { |p| package p }
 
-# We always need br-int.  Quantum uses this bridge internally.
-execute "create_int_br" do
-  command "ovs-vsctl add-br br-int"
-  not_if "ovs-vsctl list-br | grep -q br-int"
-end
+  bash "Load openvswitch module" do
+    code node[:quantum][:platform][:ovs_modprobe]
+    not_if do ::File.directory?("/sys/module/openvswitch") end
+ end
 
-# Make sure br-int is always up.
-ruby_block "Bring up the internal bridge" do
-  block do
-    ::Nic.new('br-int').up
+  service "openvswitch-switch" do
+    supports :status => true, :restart => true
+    action [ :enable ]
   end
-end
 
-# Create the bridges Quantum needs.
-# Usurp config as needed.
-[ [ "nova_fixed", "fixed" ],
-  [ "os_sdn", "tunnel" ],
-  [ "public", "public"] ].each do |net|
-  bound_if = (node[:crowbar_wall][:network][:nets][net[0]].last rescue nil)
-  next unless bound_if
-  name = "br-#{net[1]}"
-  execute "Quantum: create #{name}" do
-    command "ovs-vsctl add-br #{name}; ip link set #{name} up"
-    not_if "ovs-vsctl list-br |grep -q #{name}"
+  bash "Start openvswitch-switch service" do
+    code "service openvswitch-switch start"
+    only_if "service openvswitch-switch status |grep -q 'is not running'"
   end
-  next if net[1] == "tunnel"
-  execute "Quantum: add #{bound_if} to #{name}" do
-    command "ovs-vsctl del-port #{name} #{bound_if} ; ovs-vsctl add-port #{name} #{bound_if}"
-    not_if "ovs-dpctl show system@#{name} | grep -q #{bound_if}"
+
+  # We always need br-int.  Quantum uses this bridge internally.
+  execute "create_int_br" do
+    command "ovs-vsctl add-br br-int"
+    not_if "ovs-vsctl list-br | grep -q br-int"
   end
-  ruby_block "Have #{name} usurp config from #{bound_if}" do
+
+  # Make sure br-int is always up.
+  ruby_block "Bring up the internal bridge" do
     block do
-      target = ::Nic.new(name)
-      res = target.usurp(bound_if)
-      Chef::Log.info("#{name} usurped #{res[0].join(", ")} addresses from #{bound_if}") unless res[0].empty?
-      Chef::Log.info("#{name} usurped #{res[1].join(", ")} routes from #{bound_if}") unless res[1].empty?
+      ::Nic.new('br-int').up
+    end
+  end
+
+  # Create the bridges Quantum needs.
+  # Usurp config as needed.
+  [ [ "nova_fixed", "fixed" ],
+    [ "os_sdn", "tunnel" ],
+    [ "public", "public"] ].each do |net|
+    bound_if = (node[:crowbar_wall][:network][:nets][net[0]].last rescue nil)
+    next unless bound_if
+    name = "br-#{net[1]}"
+    execute "Quantum: create #{name}" do
+      command "ovs-vsctl add-br #{name}; ip link set #{name} up"
+      not_if "ovs-vsctl list-br |grep -q #{name}"
+    end
+    next if net[1] == "tunnel"
+    execute "Quantum: add #{bound_if} to #{name}" do
+      command "ovs-vsctl del-port #{name} #{bound_if} ; ovs-vsctl add-port #{name} #{bound_if}"
+      not_if "ovs-dpctl show system@#{name} | grep -q #{bound_if}"
+    end
+    ruby_block "Have #{name} usurp config from #{bound_if}" do
+      block do
+        target = ::Nic.new(name)
+        res = target.usurp(bound_if)
+        Chef::Log.info("#{name} usurped #{res[0].join(", ")} addresses from #{bound_if}") unless res[0].empty?
+        Chef::Log.info("#{name} usurped #{res[1].join(", ")} routes from #{bound_if}") unless res[1].empty?
+      end
     end
   end
 end
@@ -228,22 +244,25 @@ Chef::Log.info("Keystone server found at #{keystone_address}")
 vlan_start = node[:network][:networks][:nova_fixed][:vlan]
 vlan_end = vlan_start + 2000
 
-template "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini" do
-  cookbook "quantum"
-  source "ovs_quantum_plugin.ini.erb"
-  mode "0640"
-  owner node[:quantum][:platform][:user]
-  variables(
-            :sql_connection => quantum[:quantum][:db][:ovs_sql_connection],
-            :sql_idle_timeout => quantum[:quantum][:sql][:idle_timeout],
-            :sql_min_pool_size => quantum[:quantum][:sql][:min_pool_size],
-            :sql_max_pool_size => quantum[:quantum][:sql][:max_pool_size],
-            :networking_mode => quantum[:quantum][:networking_mode],
-            :rootwrap_bin =>  node[:quantum][:rootwrap],
-            :physnet => quantum[:quantum][:networking_mode] == 'gre' ? "br-tunnel" : "br-fixed",
-            :vlan_start => vlan_start,
-            :vlan_end => vlan_end
-            )
+case quantum[:quantum][:networking_plugin]
+when "openvswitch"
+  plugin_cfg_path = "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
+  physnet = quantum[:quantum][:networking_mode] == 'gre' ? "br-tunnel" : "br-fixed"
+  interface_driver = "quantum.agent.linux.interface.OVSInterfaceDriver"
+  external_network_bridge = "br-public"
+when "linuxbridge"
+  plugin_cfg_path = "/etc/quantum/plugins/linuxbridge/linuxbridge_conf.ini"
+  physnet = (node[:crowbar_wall][:network][:nets][:nova_fixed].first rescue nil)
+  interface_driver = "quantum.agent.linux.interface.BridgeInterfaceDriver"
+  external_network_bridge = ""
+end
+
+if quantum[:quantum][:use_gitrepo] == true
+  plugin_cfg_path = File.join("/opt/quantum", plugin_cfg_path)
+end
+
+link plugin_cfg_path do
+  to "/etc/quantum/quantum.conf"
 end
 
 template "/etc/quantum/quantum.conf" do
@@ -274,10 +293,13 @@ template "/etc/quantum/quantum.conf" do
       :quantum_server => quantum_server,
       :per_tenant_vlan => per_tenant_vlan,
       :networking_mode => quantum[:quantum][:networking_mode],
+      :networking_plugin => quantum[:quantum][:networking_plugin],
       :vlan_start => vlan_start,
       :vlan_end => vlan_end,
-      :physnet => quantum[:quantum][:networking_mode] == 'gre' ? "br-tunnel" : "br-fixed",
-      :rootwrap_bin =>  node[:quantum][:rootwrap]
+      :physnet => physnet,
+      :interface_driver => interface_driver,
+      :external_network_bridge => external_network_bridge,
+      :rootwrap_bin =>  quantum[:quantum][:rootwrap]
     )
 end
 
@@ -287,8 +309,3 @@ service quantum_agent do
   subscribes :restart, "template[/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini]", :immediately
   subscribes :restart, "template[/etc/quantum/quantum.conf]", :immediately
 end
-
-
-
-
-
