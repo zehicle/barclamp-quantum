@@ -31,6 +31,22 @@ when "openvswitch"
       mode 00755
       owner node[:quantum][:platform][:user]
     end
+
+    link "/etc/rc2.d/S20quantum-ovs-cleanup" do
+      to "../init.d/quantum-ovs-cleanup"
+    end
+
+    link "/etc/rc3.d/S20quantum-ovs-cleanup" do
+      to "../init.d/quantum-ovs-cleanup"
+    end
+
+    link "/etc/rc4.d/S20quantum-ovs-cleanup" do
+      to "../init.d/quantum-ovs-cleanup"
+    end
+
+    link "/etc/rc5.d/S20quantum-ovs-cleanup" do
+      to "../init.d/quantum-ovs-cleanup"
+    end
   end
 when "linuxbridge"
   quantum_agent=node[:quantum][:platform][:lb_agent_name]
